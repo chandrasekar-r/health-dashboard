@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Vitals Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2rem;
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        .stat-trend {
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+        .trend-up { color: #ff6b6b; }
+        .trend-down { color: #51cf66; }
+        .trend-stable { color: #ffd43b; }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .chart-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .chart-title {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: #00d9ff;
+        }
+        .alerts-section {
+            margin-top: 30px;
+        }
+        .alert-card {
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid rgba(255, 107, 107, 0.4);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .alert-title {
+            color: #ff6b6b;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .last-updated {
+            text-align: center;
+            color: #666;
+            margin-top: 30px;
+            font-size: 0.85rem;
+        }
+        .data-source {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }
+        .data-source label {
+            display: block;
+            margin-bottom: 10px;
+            color: #888;
+        }
+        .data-source textarea {
+            width: 100%;
+            max-width: 500px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-family: monospace;
+            resize: vertical;
+        }
+        .data-source button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #00d9ff, #00ff88);
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .data-source button:hover {
+            opacity: 0.9;
+        }
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <h1>🏥 Health Vitals Dashboard</h1>
+        
+        <div class="stats-grid" id="stats-grid"></div>
+        <div class="charts-grid" id="charts-grid"></div>
+        <div class="alerts-section" id="alerts-section"></div>
+        
+        <div class="data-source">
+            <label>📊 Update Vitals Data (JSON)</label>
+            <textarea id="data-input" rows="6"></textarea>
+            <br>
+            <button onclick="updateFromInput()">Update Dashboard</button>
+        </div>
+        
+        <p class="last-updated" id="last-updated"></p>
+    </div>
+
+    <script>
+        // Default vitals data
+        let vitalsData = {
+            history: {
+                dates: ['20/01', '21/01', '22/01', '23/01', '24/01', '25/01', '26/01', '27/01'],
+                heartRate: [72, 75, 78, 82, 85, 95, 105, 111],
+                bloodPressure: { systolic: [120, 122, 121, 123, 122, 124, 125, 124], diastolic: [75, 76, 74, 77, 75, 76, 74, 74] },
+                spO2: [99, 98, 99, 98, 99, 98, 98, 98],
+                weight: [73, 72.5, 72.8, 72.2, 72.5, 72, 71.5, 72]
+            },
+            latest: {
+                heartRate: { value: 111, unit: 'BPM', status: 'elevated' },
+                bloodPressure: { value: '124/74', unit: 'mmHg', status: 'normal' },
+                spO2: { value: 98, unit: '%', status: 'normal' },
+                weight: { value: 72, unit: 'kg', status: 'normal' },
+                bmi: { value: 22.47, unit: '', status: 'normal' }
+            },
+            alerts: [
+                { title: '⚠️ Elevated Heart Rate', message: 'Heart rate at 111 BPM - above normal range (60-100). Monitor and consult if persists.' }
+            ]
+        };
+
+        // Load from localStorage if available
+        if (localStorage.getItem('vitalsData')) {
+            try {
+                vitalsData = JSON.parse(localStorage.getItem('vitalsData'));
+            } catch (e) {}
+        }
+
+        // Pre-fill the textarea
+        document.getElementById('data-input').value = JSON.stringify(vitalsData, null, 2);
+
+        function getStatusColor(status) {
+            switch(status) {
+                case 'normal': return '#51cf66';
+                case 'elevated': return '#ffd43b';
+                case 'critical': return '#ff6b6b';
+                default: return '#888';
+            }
+        }
+
+        function getTrend(current, previous) {
+            if (current > previous + 5) return { text: '↑ Rising', class: 'trend-up' };
+            if (current < previous - 5) return { text: '↓ Falling', class: 'trend-down' };
+            return { text: '→ Stable', class: 'trend-stable' };
+        }
+
+        function renderStats() {
+            const grid = document.getElementById('stats-grid');
+            const latest = vitalsData.latest;
+            
+            const stats = [
+                { label: 'Heart Rate', value: latest.heartRate.value, unit: latest.heartRate.unit, status: latest.heartRate.status, 
+                  trend: getTrend(latest.heartRate.value, vitalsData.history.heartRate[vitalsData.history.heartRate.length - 2]) },
+                { label: 'Blood Pressure', value: latest.bloodPressure.value, unit: latest.bloodPressure.unit, status: latest.bloodPressure.status,
+                  trend: { text: '→ Stable', class: 'trend-stable' } },
+                { label: 'SpO2', value: latest.spO2.value, unit: latest.spO2.unit, status: latest.spO2.status,
+                  trend: getTrend(latest.spO2.value, vitalsData.history.spO2[vitalsData.history.spO2.length - 2]) },
+                { label: 'Weight', value: latest.weight.value, unit: latest.weight.unit, status: latest.weight.status,
+                  trend: getTrend(latest.weight.value, vitalsData.history.weight[vitalsData.history.weight.length - 2]) },
+                { label: 'BMI', value: latest.bmi.value, unit: '', status: latest.bmi.status,
+                  trend: { text: '→ Stable', class: 'trend-stable' } }
+            ];
+
+            grid.innerHTML = stats.map(stat => `
+                <div class="stat-card">
+                    <div class="stat-value" style="color: ${getStatusColor(stat.status)}">${stat.value}${stat.unit}</div>
+                    <div class="stat-label">${stat.label}</div>
+                    <div class="stat-trend ${stat.trend.class}">${stat.trend.text}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderCharts() {
+            const grid = document.getElementById('charts-grid');
+            grid.innerHTML = `
+                <div class="chart-card">
+                    <div class="chart-title">❤️ Heart Rate Trend</div>
+                    <canvas id="heartRateChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">🩸 Blood Pressure Trend</div>
+                    <canvas id="bpChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">💨 SpO2 Trend</div>
+                    <canvas id="spo2Chart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">⚖️ Weight Trend</div>
+                    <canvas id="weightChart"></canvas>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                createChart('heartRateChart', vitalsData.history.dates, vitalsData.history.heartRate, 'Heart Rate (BPM)', '#ff6b6b');
+                createChart('bpChart', vitalsData.history.dates, vitalsData.history.bloodPressure.systolic, 'Systolic', '#ff6b6b', vitalsData.history.bloodPressure.diastolic, 'Diastolic');
+                createChart('spo2Chart', vitalsData.history.dates, vitalsData.history.spO2, 'SpO2 (%)', '#51cf66');
+                createChart('weightChart', vitalsData.history.dates, vitalsData.history.weight, 'Weight (kg)', '#00d9ff');
+            }, 100);
+        }
+
+        function createChart(id, labels, data, label, color, data2 = null, label2 = '') {
+            const ctx = document.getElementById(id).getContext('2d');
+            const datasets = [{
+                label: label,
+                data: data,
+                borderColor: color,
+                backgroundColor: color + '20',
+                fill: true,
+                tension: 0.4
+            }];
+            
+            if (data2) {
+                datasets.push({
+                    label: label2,
+                    data: data2,
+                    borderColor: '#00d9ff',
+                    backgroundColor: '#00d9ff20',
+                    fill: true,
+                    tension: 0.4
+                });
+            }
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { labels: { color: '#fff' } } },
+                    scales: {
+                        x: { ticks: { color: '#888' }, grid: { color: '#ffffff10' } },
+                        y: { ticks: { color: '#888' }, grid: { color: '#ffffff10' } }
+                    }
+                }
+            });
+        }
+
+        function renderAlerts() {
+            const section = document.getElementById('alerts-section');
+            if (vitalsData.alerts && vitalsData.alerts.length > 0) {
+                section.innerHTML = '<h3 style="margin-bottom: 15px; color: #ff6b6b;">⚠️ Alerts</h3>' + 
+                    vitalsData.alerts.map(alert => `
+                        <div class="alert-card">
+                            <div class="alert-title">${alert.title}</div>
+                            <div>${alert.message}</div>
+                        </div>
+                    `).join('');
+            } else {
+                section.innerHTML = '';
+            }
+        }
+
+        function updateFromInput() {
+            try {
+                vitalsData = JSON.parse(document.getElementById('data-input').value);
+                localStorage.setItem('vitalsData', JSON.stringify(vitalsData));
+                renderStats();
+                renderCharts();
+                renderAlerts();
+                updateTimestamp();
+            } catch (e) {
+                alert('Invalid JSON format');
+            }
+        }
+
+        function updateTimestamp() {
+            document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleString()}`;
+        }
+
+        // Initialize
+        renderStats();
+        renderCharts();
+        renderAlerts();
+        updateTimestamp();
+    </script>
+</body>
+</html>
